@@ -7,7 +7,7 @@ const UNK='#8d949c';
 const $=s=>document.querySelector(s);
 const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 
-let state={showClosures:store.get('showClosures',true),
+let state={zones:store.get('zones',{}),showClosures:store.get('showClosures',true),
   mode:'sweep', day:'all',
   dayOf:store.get('dayOf','08:00'), lead:store.get('lead',60), weekly:store.get('weekly',false),
   parked:store.get('parked',null), myPark:store.get('myPark',{})
@@ -28,12 +28,13 @@ function dateLabel(d){return d.toLocaleDateString('en-US',{weekday:'long',month:
 /* ---------- data ---------- */
 async function load(){
   const custom=store.get('customGeo',null);
-  const [g,h,p]=await Promise.all([
+  const [g,h,p,zz]=await Promise.all([
     custom?Promise.resolve(custom):fetch('data/segments.geojson').then(r=>r.json()),
     fetch('data/holidays.json').then(r=>r.json()).catch(()=>({dates:{}})),
-    fetch('data/parking.json').then(r=>r.json()).catch(()=>({}))
+    fetch('data/parking.json').then(r=>r.json()).catch(()=>({})),
+    fetch('data/zones.json').then(r=>r.json()).catch(()=>[])
   ]);
-  geo=g; holidays=h.dates||{}; sharedPark=p;
+  geo=g; holidays=h.dates||{}; sharedPark=p; pmZones=zz||[];
   const last=Object.keys(holidays).sort().pop();
   $('#holNote').textContent=`City holidays known through ${last||'?'}. Cleaning is skipped on those days. Weather suspensions are announced on Nixle, so this app is a guide, not a guarantee.`;
   importFromHash();
@@ -64,7 +65,7 @@ function visible(p){
   return p.days.includes(d);
 }
 /* ---------- street-style labels on the lines (zoomed in) ---------- */
-let labelItems=[], labelLayer=null;
+let labelItems=[], labelLayer=null, lastPt=null, carPin=null;
 const sfx=h=>h<12?'am':'pm', h12=h=>h%12||12;
 function compact(s,e){return sfx(s)===sfx(e)?`${h12(s)}–${h12(e)}${sfx(e)}`:`${h12(s)}${sfx(s)}–${h12(e)}${sfx(e)}`}
 function lineText(p,k){
@@ -95,7 +96,7 @@ function draw(){
     o.lines.forEach(ll=>{
       labelItems.push({ll,col,txt});
       const line=L.polyline(ll,{color:col,weight:hlWeight(),opacity:.5,lineCap:'butt',className:'hl'}).addTo(layer);
-      line.on('click',e=>{L.DomEvent.stopPropagation(e);
+      line.on('click',e=>{L.DomEvent.stopPropagation(e); lastPt=[e.latlng.lat,e.latlng.lng];
         if(state.mode==='park'&&paint!==null){ if(paint==='clear')delete state.myPark[k]; else state.myPark[k]=paint; store.set('myPark',state.myPark); draw(); }
         else showSide(k)});
     });
@@ -172,7 +173,21 @@ function highlight(k){
   keys[k].lines.forEach(ll=>L.polyline(ll,{color:'#14222f',weight:3,opacity:1}).addTo(hilite));
 }
 const PSIGN={res:['Residents only','Resident permit required.'],res4:['Permit parking','Everyone else: 4 hour limit.'],pay4:['Paid parking','Meter or ParkMobile. 4 hour limit.']};
-function parkSection(k,editing){
+const PM_URL='https://app.parkmobile.io/search/hoboken-nj-usa';
+let pmZones=[];
+function zoneFor(k,pt){
+  const o=keys[k]; if(!o||!pmZones.length)return null;
+  const P=pt?toXY(pt[0],pt[1]):null; let best=null;
+  pmZones.forEach(([z,la,lo])=>{ const [x,y]=toXY(la,lo); const d=Math.min(...o.lines.map(l=>distToLine(x,y,l)));
+    if(d>14)return; const score=P?Math.hypot(P[0]-x,P[1]-y):d; if(!best||score<best.s)best={z,s:score}; });
+  return best&&best.z;
+}
+function pmPill(k,pt){
+  if(parkOf(k)==='res')return '';
+  const z=zoneFor(k,pt), ok=z&&/^47\d{3}$/.test(z);
+  return `<div class="pmrow"><a class="pmpill" href="${ok?'https://app.parkmobile.io/zone/304'+z:PM_URL}" target="_blank" rel="noopener"><span class="pmdot">P</span>ParkMobile${ok?' · '+z:''} ↗</a></div>`;
+}
+function parkSection(k,editing,pt){
   const cur=parkOf(k);
   const sign=cur?PSIGN[cur]:['Not added yet','Check the sign on the street.'];
   const chips=Object.entries(PARK).map(([id,v])=>`<button data-t="${id}" class="${cur===id?'on':''}" style="${cur===id?'background:'+v.col:''}">${v.label}</button>`).join('')+`<button data-t="" class="${!cur?'on':''}" style="${!cur?'background:#8d949c':''}">Not sure</button>`;
@@ -183,10 +198,10 @@ function parkSection(k,editing){
 }
 function bindParkSec(){
   const el=$('#parkSec'); if(!el)return; const k=el.dataset.k;
-  const w=$('#wrong'); if(w)w.onclick=()=>{el.outerHTML=parkSection(k,true);bindParkSec()};
+  const w=$('#wrong'); if(w)w.onclick=()=>{el.outerHTML=parkSection(k,true,lastPt);bindParkSec()};
   const pt=el.querySelector('.ptype'); if(pt)pt.onclick=e=>{const b=e.target.closest('button');if(!b)return;const t=b.dataset.t;
     if(t)state.myPark[k]=t; else delete state.myPark[k];
-    store.set('myPark',state.myPark); el.outerHTML=parkSection(k,false); bindParkSec(); if(state.mode==='park')draw(); toast('Saved on this phone')};
+    store.set('myPark',state.myPark); el.outerHTML=parkSection(k,false,lastPt); bindParkSec(); if(state.mode==='park')draw(); toast('Saved on this phone')};
 }
 function dayColor(p){return p.days.length===5?'#444':DAYCOL[p.days[0]]}
 function head(p,tag){return `<div class="shead"><div>${tag?`<span class="tag">${tag}</span>`:''}<div class="big">${p.street}</div><div class="muted">${p.side} side · ${p.location}</div></div><button class="icon" id="closeS" aria-label="Close">✕</button></div>`}
@@ -199,16 +214,40 @@ function showSide(k,fromGPS){
     <div class="clean"><span class="cbar" style="background:${dayColor(p)}"></span><div><div class="cday">${weekdayList(p.days)}</div><div class="ctime">${range(p.start,p.end)}</div></div></div>
     ${skip?`<div class="muted" style="margin-top:6px">No cleaning ${dateLabel(skip.date)} (${skip.name}).</div>`:''}
     ${closureNote(k)}
-    ${parkSection(k,false)}
-    <button class="primary wide" id="parkHere">I’m parked here</button>`);
+    ${parkSection(k,false,lastPt)}
+    <button class="primary wide" id="parkHere">I’m parked here</button>
+    ${pmPill(k,lastPt)}`);
   bindParkSec();
   $('#parkHere').onclick=()=>setParked(k);
   $('#closeS').onclick=closeSheet;
 }
 
 /* ---------- parked ---------- */
+function snapTo(k,pt){
+  const o=keys[k]; let best=null;
+  const P=pt?toXY(pt[0],pt[1]):null;
+  o.lines.forEach(l=>{ for(let i=0;i<l.length-1;i++){
+    const a=toXY(...l[i]),b=toXY(...l[i+1]); const dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy||1;
+    let t=P?((P[0]-a[0])*dx+(P[1]-a[1])*dy)/L2:.5; t=Math.max(0,Math.min(1,t));
+    const q=[a[0]+t*dx,a[1]+t*dy]; const d=P?Math.hypot(P[0]-q[0],P[1]-q[1]):-Math.sqrt(L2);
+    if(!best||d<best.d)best={d,ll:[q[1]/KY,q[0]/KX]}; }});
+  return best.ll;
+}
+function focusCar(){
+  const pk=state.parked; if(!pk||!pk.ll||!map)return;
+  map.setView(pk.ll,Math.max(map.getZoom(),17),{animate:false});
+  const sh=$('#sheet'), top=sh.hidden?innerHeight:sh.getBoundingClientRect().top, hb=$('#top').offsetHeight;
+  const target=(hb+top)/2, cur=map.getSize().y/2; map.panBy([0,Math.round(cur-target)],{animate:false});
+}
+function drawCarPin(){
+  if(carPin){carPin.remove();carPin=null}
+  const pk=state.parked; if(!pk||!keys[pk.k]||!pk.ll||!map)return;
+  const svg=`<svg width="34" height="44" viewBox="0 0 34 44"><path d="M17 43C17 43 31 27 31 16A14 14 0 0 0 3 16C3 27 17 43 17 43Z" fill="#14222f" stroke="#fff" stroke-width="2.5"/><g fill="#fff"><path d="M9.5 18.5l2-5.2c.3-.8 1-1.3 1.9-1.3h7.2c.9 0 1.6.5 1.9 1.3l2 5.2v5.2c0 .5-.4.8-.8.8h-1.6c-.5 0-.8-.3-.8-.8v-1h-9.6v1c0 .5-.4.8-.8.8h-1.6c-.5 0-.8-.3-.8-.8z"/></g><g fill="#14222f"><circle cx="12.6" cy="19.6" r="1.4"/><circle cx="21.4" cy="19.6" r="1.4"/><path d="M12.4 14.2l.6-1.4h8l.6 1.4z"/></g></svg>`;
+  carPin=L.marker(pk.ll,{icon:L.divIcon({className:'carpin',html:svg,iconSize:[34,44],iconAnchor:[17,43]}),zIndexOffset:900,keyboard:false}).addTo(map);
+  carPin.on('click',()=>showParked());
+}
 function setParked(k){
-  state.parked={k,at:Date.now()}; store.set('parked',state.parked); showParked();
+  state.parked={k,at:Date.now(),ll:snapTo(k,lastPt)}; store.set('parked',state.parked); drawCarPin(); showParked(); focusCar();
 }
 function showParked(){
   const pk=state.parked; if(!pk||!keys[pk.k]){state.parked=null;store.set('parked',null);return}
@@ -229,9 +268,10 @@ function showParked(){
     :'<div class="clean"><span class="cbar" style="background:#8d949c"></span><div><div class="cday">All clear</div><div class="ctime">No cleaning in the next 3 weeks</div></div></div>'}
     ${closureNote(pk.k)}
     <button class="primary wide" id="ics">Remind me</button>
-    <div class="row between" style="margin-top:6px"><button class="link" id="chg">Change spot</button><button class="link" id="moved">I moved my car</button></div>`);
+    <div class="row between" style="margin-top:6px"><button class="link" id="chg">Change spot</button><button class="link" id="moved">I moved my car</button></div>
+    ${pmPill(pk.k,pk.ll)}`);
   $('#ics').onclick=()=>openMenu(p,n);
-  $('#moved').onclick=()=>{state.parked=null;store.set('parked',null);closeSheet();toast('Cleared. Delete the calendar event if you added one.')};
+  $('#moved').onclick=()=>{state.parked=null;store.set('parked',null);drawCarPin();closeSheet();toast('Cleared. Delete the calendar event if you added one.')};
   $('#chg').onclick=()=>locate();
   $('#closeS').onclick=closeSheet;
 }
@@ -304,7 +344,7 @@ function locate(){
   navigator.geolocation.getCurrentPosition(pos=>{
     const {latitude:lat,longitude:lon,accuracy}=pos.coords;
     map.setView([lat,lon],18);
-    showMe(lat,lon,accuracy,false);
+    showMe(lat,lon,accuracy,false); lastPt=[lat,lon];
     showCandidates(nearest(lat,lon),accuracy);
   },()=>toast('Couldn’t get your location. Tap your street on the map instead.'),{enableHighAccuracy:true,timeout:15000,maximumAge:10000});
 }
@@ -351,7 +391,7 @@ function initSettings(){
   };
   $('#resetData').onclick=()=>{store.set('customGeo',null);load();toast('Using the built-in schedule')};
   $('#shareParking').onclick=async()=>{
-    const data=btoa(unescape(encodeURIComponent(JSON.stringify(state.myPark))));
+    const data=btoa(unescape(encodeURIComponent(JSON.stringify({v:2,p:state.myPark,z:state.zones}))));
     const url=location.origin+location.pathname+'#p='+data;
     try{ if(navigator.share)await navigator.share({title:'Hoboken Sweep parking notes',url}); else {await navigator.clipboard.writeText(url);toast('Link copied')} }catch(e){}
   };
@@ -365,8 +405,9 @@ function importFromHash(){
   const m=location.hash.match(/#p=(.+)$/); if(!m)return;
   try{
     const j=JSON.parse(decodeURIComponent(escape(atob(m[1]))));
-    const n=Object.keys(j).length;
-    if(n&&confirm(`Add ${n} parking notes from this link?`)){Object.assign(state.myPark,j);store.set('myPark',state.myPark);toast('Parking notes added')}
+    const pj=j.v===2?(j.p||{}):j, zj=j.v===2?(j.z||{}):{};
+    const n=Object.keys(pj).length+Object.keys(zj).length;
+    if(n&&confirm(`Add ${n} parking notes from this link?`)){Object.assign(state.myPark,pj);Object.assign(state.zones,zj);store.set('myPark',state.myPark);store.set('zones',state.zones);toast('Parking notes added')}
   }catch(e){}
   history.replaceState(null,'',location.pathname);
 }
@@ -418,7 +459,7 @@ function closureNote(k){
 /* ---------- start ---------- */
 window.addEventListener('DOMContentLoaded',async()=>{
   initMap(); buildChips(); initSettings(); await load(); drawClosures(); fetchClosures(); setInterval(fetchClosures,5*60*1000); document.addEventListener('visibilitychange',()=>{if(!document.hidden)fetchClosures()});
-  if(state.parked)showParked();
+  if(state.parked){drawCarPin();showParked();focusCar();}
   if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 });
 window.__test={get state(){return state},keys:()=>keys,nextCleaning,downloadICS,nearest,setParked};

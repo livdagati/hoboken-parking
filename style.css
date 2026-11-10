@@ -146,3 +146,15 @@ body{-webkit-user-select:none;user-select:none}
 
 .clk.soon{background:#fff;border:2px solid #e5232d;width:14px;height:14px;box-sizing:border-box}
 .clk.soon::after{background:#e5232d;left:2px;top:4px}
+
+.carpin{filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))}
+
+.zrow{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;font-size:15px}
+.zrow a{color:#2a6fdb}
+.link.inl{display:inline;margin:0;padding:0;min-height:0;font-size:inherit}
+
+.pmlink{display:block;margin-top:10px;padding:12px 14px;border-radius:14px;border:1.5px solid var(--line);text-align:center;font-weight:600;color:#2a6fdb;text-decoration:none;min-height:44px}
+
+.pmrow{display:flex;justify-content:center;margin-top:12px}
+.pmpill{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 14px;border-radius:999px;border:1.5px solid var(--line);font-size:14px;font-weight:600;color:var(--ink2);text-decoration:none}
+.pmdot{width:18px;height:18px;border-radius:50%;background:#1aa84b;color:#fff;font-size:11px;font-weight:800;display:grid;place-items:center}
