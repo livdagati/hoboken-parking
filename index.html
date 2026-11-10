@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>hoboken parking !</title>
+<meta name="theme-color" content="#14222f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="hoboken parking !">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="map" aria-label="Street sweeping map"></div>
+
+<header id="top">
+  <div class="row between">
+    <div class="brand"><h1>hoboken parking !</h1><span>xoxo -liv</span></div>
+    <div class="row gap">
+      <div class="seg" id="mode" role="tablist" aria-label="Map layer">
+        <button class="on" data-mode="sweep">Sweeping</button>
+        <button data-mode="park">Parking</button>
+      </div>
+      <button class="icon" id="settingsBtn" aria-label="Settings">⚙</button>
+    </div>
+  </div>
+  <div class="chips" id="days"></div>
+  <div id="banner" hidden></div>
+</header>
+
+<div id="legend"></div>
+<div id="paintbar" hidden></div>
+
+<div id="fabs">
+  <button class="round" id="meBtn" aria-label="Show my location">◎</button>
+  <button class="fab" id="locateBtn">I’m parked here</button>
+</div>
+
+<section id="sheet" hidden>
+  <div class="grab"></div>
+  <div id="sheetBody"></div>
+</section>
+
+<section id="settings" hidden>
+  <div class="panel">
+    <div class="row between"><h2>Settings</h2><button class="icon" id="closeSettings" aria-label="Close">✕</button></div>
+    <label>Day-of alert time
+      <input type="time" id="setDayOf" value="08:00"></label>
+    <label>Second alert, before the window starts
+      <select id="setLead">
+        <option value="30">30 minutes before</option>
+        <option value="60">1 hour before</option>
+        <option value="90">1.5 hours before</option>
+        <option value="120">2 hours before</option>
+      </select></label>
+    <label class="check"><input type="checkbox" id="setWeekly"> Repeat every week (until I tap “I moved my car”)</label>
+    <p class="note" id="holNote"></p>
+    <h3>Updated schedule file</h3>
+    <p class="note">Optional. Pick a <b>schedule.json</b> from your iCloud Drive or Files app to replace the built-in schedule.</p>
+    <div class="row gap wrap"><input type="file" id="fileIn" accept=".json,application/json"><button class="ghost" id="resetData">Use built-in schedule</button></div>
+    <h3>Parking notes</h3>
+    <p class="note">Notes you add about parking rules stay on this phone. Send them to a friend with a link.</p>
+    <div class="row gap wrap"><button class="primary" id="shareParking">Send my parking notes</button><button class="ghost" id="clearParking">Clear my notes</button></div>
+    <p class="note" id="parkMsg"></p>
+    <h3>Where the info comes from</h3>
+    <p class="note">Street cleaning schedule and holidays: City of Hoboken. Parking sides: Hoboken’s parking code and the SpotAngels map. Streets and map: OpenStreetMap contributors. The signs on the street always win.</p>
+  </div>
+</section>
+
+<section id="menu" hidden>
+  <div class="panel">
+    <div class="row between"><h2>Remind me</h2><button class="icon" id="closeMenu" aria-label="Close">✕</button></div>
+    <button class="opt" id="optCal"><b>Calendar alerts</b><span>Alerts at your day-of time and before the window starts. Works even when the app is closed.</span></button>
+    <button class="opt" id="optCopy"><b>Copy the details</b><span>Paste into Reminders, Notes or anywhere.</span></button>
+  </div>
+</section>
+<div id="toast" hidden></div>
+<script src="vendor/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
