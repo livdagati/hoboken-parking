@@ -158,3 +158,13 @@ body{-webkit-user-select:none;user-select:none}
 .pmrow{display:flex;justify-content:center;margin-top:12px}
 .pmpill{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 14px;border-radius:999px;border:1.5px solid var(--line);font-size:14px;font-weight:600;color:var(--ink2);text-decoration:none}
 .pmdot{width:18px;height:18px;border-radius:50%;background:#1aa84b;color:#fff;font-size:11px;font-weight:800;display:grid;place-items:center}
+
+.chip.x{background:var(--bg);border-style:dashed;color:var(--ink2)}
+
+.chipsep{flex:none;width:1px;background:var(--line);margin:4px 2px}
+
+.chip.sel{position:relative;display:inline-flex;align-items:center;padding:0 30px 0 14px}
+.chip.sel select{appearance:none;-webkit-appearance:none;border:0;background:transparent;font:inherit;font-weight:600;color:inherit;padding:0;height:34px;outline:none}
+.chip.sel::after{content:"";position:absolute;right:13px;top:50%;width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:translateY(-70%) rotate(45deg);pointer-events:none}
+.chip.sel.on{background:#14222f;color:#fff;border-color:transparent}
+.chip.sel select option{color:#16202a}

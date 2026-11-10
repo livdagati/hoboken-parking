@@ -1,4 +1,4 @@
-/* Hoboken Sweep: street sweeping map, parked-car lookup, calendar alerts. No server. */
+/* hoboken parking !: street sweeping map, parked-car lookup, calendar alerts. No server. */
 const DAYNAMES=['Monday','Tuesday','Wednesday','Thursday','Friday'];
 const DAYSHORT=['Mon','Tue','Wed','Thu','Fri'];
 const DAYCOL=['#1f6bff','#12b76a','#ffb000','#ff5a1f','#a43cff'];
@@ -7,7 +7,7 @@ const UNK='#8d949c';
 const $=s=>document.querySelector(s);
 const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 
-let state={zones:store.get('zones',{}),showClosures:store.get('showClosures',true),
+let state={pf:'all',sweepPf:'all',zones:store.get('zones',{}),showClosures:store.get('showClosures',true),
   mode:'sweep', day:'all',
   dayOf:store.get('dayOf','08:00'), lead:store.get('lead',60), weekly:store.get('weekly',false),
   parked:store.get('parked',null), myPark:store.get('myPark',{})
@@ -59,7 +59,11 @@ function colorFor(p,k){
   if(state.mode==='park'){const t=parkOf(k);return t?PARK[t].col:UNK}
   return p.days.length===5?'#444':DAYCOL[p.days[0]];
 }
-function visible(p){
+function pfMatch(t,pf){ if(pf==='all')return true; if(pf==='open')return t==='res4'||t==='pay4'; return t===pf }
+function visible(p,k){
+  const t=parkOf(k), pf=state.pf;
+  if(state.mode==='park'){ if(pf==='all')return true; if(pf==='open'){ if(t!=='res4'&&t!=='pay4')return false } else if(t!==pf)return false; return true }
+  if(!pfMatch(t,state.sweepPf))return false;
   if(state.day==='all')return true;
   const d=state.day==='today'?dayIdx(new Date()):state.day;
   return p.days.includes(d);
@@ -69,7 +73,7 @@ let labelItems=[], labelLayer=null, lastPt=null, carPin=null;
 const sfx=h=>h<12?'am':'pm', h12=h=>h%12||12;
 function compact(s,e){return sfx(s)===sfx(e)?`${h12(s)}–${h12(e)}${sfx(e)}`:`${h12(s)}${sfx(s)}–${h12(e)}${sfx(e)}`}
 function lineText(p,k){
-  if(state.mode==='park'){const t=parkOf(k);return t?{res:'Residents',res4:'Permit · 4 hr',pay4:'Paid · 4 hr'}[t]:''}
+  if(state.mode==='park'){const t=parkOf(k);return t?{res:'Residents',res4:'Permit · 4 hr',pay4:'4 hr pay only'}[t]:''}
   return (p.days.length===5?'Mon–Fri':DAYSHORT[p.days[0]])+' '+compact(p.start,p.end);
 }
 function dark(hex){const n=parseInt(hex.slice(1),16);const f=.55;return `rgb(${Math.round((n>>16)*f)},${Math.round(((n>>8)&255)*f)},${Math.round((n&255)*f)})`}
@@ -89,30 +93,27 @@ function drawLabels(){
 function hlWeight(){const z=map.getZoom();return z<14.5?1.5:z<15.5?2.2:z<16.5?3.6:z<17.5?6:z<18.5?8:11}
 function draw(){
   if(layer)layer.remove(); layer=L.layerGroup().addTo(map); labelItems=[];
+  const drawn=new Set();
   Object.entries(keys).forEach(([k,o])=>{
-    if(!visible(o.p))return;
+    if(!visible(o.p,k))return;
     const col=colorFor(o.p,k);
     const txt=lineText(o.p,k);
     o.lines.forEach(ll=>{
+      const a=ll[0],b=ll[ll.length-1], mid=[(a[0]+b[0])/2,(a[1]+b[1])/2];
+      const dk=o.p.side+'|'+col+'|'+Math.round(mid[0]/0.00015)+'|'+Math.round(mid[1]/0.00015);
+      if(drawn.has(dk))return; drawn.add(dk);
       labelItems.push({ll,col,txt});
       const line=L.polyline(ll,{color:col,weight:hlWeight(),opacity:.5,lineCap:'butt',className:'hl'}).addTo(layer);
       line.on('click',e=>{L.DomEvent.stopPropagation(e); lastPt=[e.latlng.lat,e.latlng.lng];
-        if(state.mode==='park'&&paint!==null){ if(paint==='clear')delete state.myPark[k]; else state.myPark[k]=paint; store.set('myPark',state.myPark); draw(); }
-        else showSide(k)});
+        showSide(k)});
     });
   });
-  drawLegend(); drawBanner(); drawPaintbar(); drawLabels();
-}
-function drawPaintbar(){
-  const b=$('#paintbar'); b.hidden=state.mode!=='park'; if(b.hidden)return;
-  const opts=[...Object.entries(PARK).map(([id,v])=>[id,v.label,v.col]),['clear','Erase','#8d949c'],[null,'Look only','#14222f']];
-  b.innerHTML=opts.map(([id,l,c])=>`<button data-p="${id}" class="${paint===id?'on':''}" style="${paint===id?'background:'+c:''}">${l}</button>`).join('')+'<span class="hint">Pick a rule, then tap street sides</span>';
-  b.onclick=e=>{const x=e.target.closest('button');if(!x)return;const v=x.dataset.p;paint=v==='null'?null:v;drawPaintbar()};
+  drawLegend(); drawBanner(); drawLabels();
 }
 function drawLegend(){
   const el=$('#legend');
   if(state.mode==='park'){
-    el.innerHTML=Object.values(PARK).map(v=>`<div><i style="background:${v.col}"></i>${v.label}</div>`).join('')+`<div><i style="background:${UNK}"></i>Not added yet</div>`;
+    el.innerHTML=Object.values(PARK).map(v=>`<div><i style="background:${v.col}"></i>${v.label}</div>`).join('')+`<div><i style="background:${UNK}"></i>No info</div>`;
   }else{
     el.innerHTML=DAYNAMES.map((n,i)=>`<div><i style="background:${DAYCOL[i]}"></i>${n}</div>`).join('')+`<div><i style="background:#444"></i>Every weekday</div>`;
   }
@@ -124,16 +125,27 @@ function drawBanner(){
   let msg='';
   if(h)msg=`City holiday today (${h}): no street cleaning.`;
   else if(state.day==='today'&&dayIdx(now)>4)msg='No street cleaning on weekends.';
+  if(now.getDay()===0)msg=(msg?msg+' ':'')+'Sunday: meters are free on most streets (not Washington St).';
   b.hidden=!msg; b.textContent=msg;
 }
+const PF=[['all','All'],['res','Residents only'],['res4','4 hr + residents'],['pay4','4 hr pay only']];
+const PFCOL={all:'#14222f',open:'#14222f',res:'#12b76a',res4:'#1f6bff',pay4:'#ff8a00'};
+function dayLabel(v){return v==='today'?'Today':DAYSHORT[v]}
 function buildChips(){
-  const chips=[['today','Today'],...DAYSHORT.map((n,i)=>[i,n]),['all','All']];
-  $('#days').innerHTML=chips.map(([v,l])=>`<button class="chip" data-v="${v}">${l}</button>`).join('');
-  const paint=()=>document.querySelectorAll('.chip').forEach(c=>{
-    const v=c.dataset.v,on=String(state.day)===v;c.classList.toggle('on',on);
-    c.style.background=on?(v==='today'||v==='all'?'#14222f':DAYCOL[+v]):'';});
-  $('#days').onclick=e=>{const c=e.target.closest('.chip');if(!c)return;const v=c.dataset.v;state.day=(v==='today'||v==='all')?v:+v;paint();draw()};
-  paint();
+  const el=$('#days'); let html='';
+  if(state.mode==='sweep'){
+    html+=`<label class="chip sel ${state.sweepPf!=='all'?'on':''}"><select id="sweepPf">${PF.map(([v,l])=>`<option value="${v}" ${state.sweepPf===v?'selected':''}>${v==='all'?'All parking':l}</option>`).join('')}</select></label><span class="chipsep"></span>`;
+    html+=[['today','Today'],...DAYSHORT.map((n,i)=>[i,n]),['all','All']].map(([v,l])=>{const on=String(state.day)===String(v);return `<button class="chip ${on?'on':''}" data-v="${v}" style="${on?'background:'+(v==='today'||v==='all'?'#14222f':DAYCOL[+v]):''}">${l}</button>`}).join('');
+  }else{
+    html+=PF.map(([v,l])=>{const on=state.pf===v;return `<button class="chip ${on?'on':''}" data-p="${v}" style="${on?'background:'+PFCOL[v]:''}">${l}</button>`}).join('');
+  }
+  el.innerHTML=html;
+  const sp=$('#sweepPf'); if(sp)sp.onchange=()=>{state.sweepPf=sp.value;buildChips();draw()};
+  el.onclick=e=>{const c=e.target.closest('.chip');if(!c)return;
+    if(c.dataset.p)state.pf=c.dataset.p;
+    else if(c.dataset.v){const v=c.dataset.v;state.day=(v==='today'||v==='all')?v:+v}
+    else return;
+    buildChips();draw()};
 }
 
 /* ---------- schedule logic ---------- */
@@ -172,7 +184,7 @@ function highlight(k){
   keys[k].lines.forEach(ll=>L.polyline(ll,{color:'#fff',weight:12,opacity:.9}).addTo(hilite).bringToBack());
   keys[k].lines.forEach(ll=>L.polyline(ll,{color:'#14222f',weight:3,opacity:1}).addTo(hilite));
 }
-const PSIGN={res:['Residents only','Resident permit required.'],res4:['Permit parking','Everyone else: 4 hour limit.'],pay4:['Paid parking','Meter or ParkMobile. 4 hour limit.']};
+const PSIGN={res:['Residents only','Resident permit required.'],res4:['Permit parking','Without a permit: pay 9am–9pm, 4 hour limit.'],pay4:['4 hr pay only','Everyone pays 9am–9pm (meter or ParkMobile), 4 hour limit.']};
 const PM_URL='https://app.parkmobile.io/search/hoboken-nj-usa';
 let pmZones=[];
 function zoneFor(k,pt){
@@ -189,11 +201,11 @@ function pmPill(k,pt){
 }
 function parkSection(k,editing,pt){
   const cur=parkOf(k);
-  const sign=cur?PSIGN[cur]:['Not added yet','Check the sign on the street.'];
+  const sign=cur?PSIGN[cur]:['No info','Check the sign on the street.'];
   const chips=Object.entries(PARK).map(([id,v])=>`<button data-t="${id}" class="${cur===id?'on':''}" style="${cur===id?'background:'+v.col:''}">${v.label}</button>`).join('')+`<button data-t="" class="${!cur?'on':''}" style="${!cur?'background:#8d949c':''}">Not sure</button>`;
   return `<div id="parkSec" data-k="${k}">
     <div class="plabel">Parking on this side</div>
-    <div class="psign ${cur||'none'}"><span class="pbadge">P</span><span><span class="pt">${sign[0]}</span><span class="ps">${sign[1]}</span></span></div>
+    <div class="psign ${cur||'none'}"><span class="pbadge">P</span><span><span class="pt">${sign[0]}</span><span class="ps">${sign[1]}${cur==='res4'||cur==='pay4'?(keys[k]&&keys[k].p.street==='Washington St'?' Paid 7 days a week.':' Meters free on Sundays.'):''}</span></span></div>
     ${editing?`<div class="plabel" style="margin-top:12px">What does the sign say?</div><div class="ptype">${chips}</div>`:'<button class="link" id="wrong">Not what the sign says?</button>'}</div>`;
 }
 function bindParkSec(){
@@ -306,8 +318,8 @@ function downloadICS(p){
     const exd=Object.keys(holidays).filter(h=>h>ymd(n.date)).filter(h=>{const [y,m,d]=h.split('-').map(Number);return p.days.includes(dayIdx(new Date(y,m-1,d)))});
     if(exd.length)ex=`EXDATE:${exd.map(h=>h.replace(/-/g,'')+'T'+pad(p.start)+'0000').join(',')}\r\n`;
   }
-  const uid=`${Date.now()}@hoboken-sweep`;
-  const ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Hoboken Sweep//EN','CALSCALE:GREGORIAN','BEGIN:VEVENT',
+  const uid=`${Date.now()}@hoboken-parking`;
+  const ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//hoboken parking//EN','CALSCALE:GREGORIAN','BEGIN:VEVENT',
     `UID:${uid}`,`DTSTAMP:${icsDate(new Date())}`,`DTSTART:${icsDate(n.start)}`,`DTEND:${icsDate(n.end)}`,
     `SUMMARY:Street cleaning: move car (${p.street} ${p.side})`,`DESCRIPTION:${what}. City holidays are skipped; weather suspensions come through Nixle.`,
     ].join('\r\n')+'\r\n'+rr+ex+alarms.join('')+'END:VEVENT\r\nEND:VCALENDAR\r\n';
@@ -393,11 +405,11 @@ function initSettings(){
   $('#shareParking').onclick=async()=>{
     const data=btoa(unescape(encodeURIComponent(JSON.stringify({v:2,p:state.myPark,z:state.zones}))));
     const url=location.origin+location.pathname+'#p='+data;
-    try{ if(navigator.share)await navigator.share({title:'Hoboken Sweep parking notes',url}); else {await navigator.clipboard.writeText(url);toast('Link copied')} }catch(e){}
+    try{ if(navigator.share)await navigator.share({title:'hoboken parking ! notes',url}); else {await navigator.clipboard.writeText(url);toast('Link copied')} }catch(e){}
   };
   $('#clearParking').onclick=()=>{state.myPark={};store.set('myPark',{});draw();$('#parkMsg').textContent='Cleared.'};
   document.querySelectorAll('#mode button').forEach(b=>b.onclick=()=>{
-    state.mode=b.dataset.mode; document.querySelectorAll('#mode button').forEach(x=>x.classList.toggle('on',x===b)); draw();
+    state.mode=b.dataset.mode; document.querySelectorAll('#mode button').forEach(x=>x.classList.toggle('on',x===b)); buildChips(); draw();
   });
   $('#locateBtn').onclick=locate; $('#meBtn').onclick=toggleMe;
 }
